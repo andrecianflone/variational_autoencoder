@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
 Writer = animation.writers['ffmpeg']
-writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
 from scipy.stats import norm
 
 # Get data
@@ -119,6 +118,7 @@ class Train():
     # Declare our VAE model
     self.model = VAE()
     num_train_batches = mnist.train.num_examples // batch_size
+    self.num_test_batches = mnist.test.num_examples // batch_size
     self.last_batch_loss = None # loss on most recent trained batch
 
     self.fig = plt.figure(figsize=(6, 6))
@@ -127,15 +127,18 @@ class Train():
     ax = plt.axes(xlim=(-12, 12), ylim=(-12, 12))
     self.epoch_time = datetime.now()
     self.cur_epoch_train = 0
-    batch_callback = True
-    self.data_stream = self.incr_train_yield_test_pred(batch_callback=batch_callback)
+    self.batch_callback = True
+    # TODO: WHY isn't outputing 30 fps, i.e. 1 epoch per second?
+    writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
     plot_n_frames_per_epoch = 30 # number of frames to visualize per epoch
-    self.plot_every_nth_frame = num_train_batches // plot_n_frames_per_epoch
 
-    if batch_callback:
-      frames = nb_epoch*self.num_train_batches-2
+    # Calculate number of frames
+    if self.batch_callback:
+      frames = nb_epoch*num_train_batches- 1
+      self.plot_every_nth_frame = num_train_batches // plot_n_frames_per_epoch
     else:
-      frames = nb_epoch - 2
+      frames = nb_epoch - 1
+      self.plot_every_nth_frame = 1
 
     # Context manager for convenience
     # Uses default graph
@@ -150,17 +153,19 @@ class Train():
       # Training and testing is managed by matplotlib iterator
       animator = animation.FuncAnimation(
               self.fig, self.update_plot, init_func=self.init_plot,
-              interval=100, frames=frames, blit=True, repeat=False)
-      # animator.save('animation.mp4', writer=writer)
+              interval=5, frames=frames, blit=True, repeat=False)
+      animator.save('animation.mp4', writer=writer)
+      # try: animator.to_html5_video()
       # animator.save('animation.mpeg', writer=writer)
-      plt.show()
+      # plt.show()
 
   def init_plot(self):
     """Create base frame
     Return:
       Must return the scatter object so animate knows what to update
     """
-    pred, labels = next(self.data_stream)
+    self.increment_training()
+    pred, labels = self.get_encoded_test()
     maxs = np.max(pred, axis=0)
     mins = np.min(pred, axis=0)
     # self.ax.set_xlim(mins[0], maxs[0])
@@ -172,9 +177,11 @@ class Train():
 
   def update_plot(self, i):
     """ Update the plot after one epoch iteration """
-    pred, labels = next(self.data_stream)
-    self.scat.set_offsets(pred)
-    self.scat.set_array(labels)
+    self.increment_training()
+    if i % self.plot_every_nth_frame == 0:
+      pred, labels = self.get_encoded_test()
+      self.scat.set_offsets(pred)
+      self.scat.set_array(labels)
     return [self.scat]
 
   def get_encoded_test(self):
@@ -183,7 +190,7 @@ class Train():
     labels = np.zeros((mnist.test.num_examples))
     for i in range(self.num_test_batches):
       shift = i * batch_size
-      batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+      batch_xs, batch_ys = mnist.test.next_batch(batch_size)
       fetch = [self.model.z_mean]
       feed = {self.model.x: batch_xs}
       z_mean = self.sess.run(fetch, feed)[0]
@@ -191,17 +198,14 @@ class Train():
       labels[shift:shift+batch_size] = batch_ys
     return pred, labels
 
-  def incr_train_yield_test_pred(self, batch_callback=False):
-    """ Yields predictions and labels of test set after an epoch or batch """
-    while True: # the animator decides when to stop the generator
-      if batch_callback: # yield after one batch
-        self.train_one_batch()
-        if mnist.train.epochs_completed > self.cur_epoch_train:
-          self.process_end_epoch()
-      else: # train a whole epoch before yielding
-        self.train_one_epoch()
-      pred, labels = self.get_encoded_test()
-      yield pred, labels
+  def increment_training(self):
+    """ Increment training by one batch or one epoch """
+    if self.batch_callback: # return after one batch
+      self.train_one_batch()
+      if mnist.train.epochs_completed > self.cur_epoch_train:
+        self.process_end_epoch()
+    else: # train a whole epoch before returning
+      self.train_one_epoch()
 
   def train_one_batch(self):
     """ Train only one batch, so can visualize results per batch """
