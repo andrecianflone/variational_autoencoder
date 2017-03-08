@@ -12,7 +12,6 @@ from tensorflow.contrib.layers import xavier_initializer as glorot
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
-Writer = animation.writers['ffmpeg']
 from scipy.stats import norm
 
 # Get data
@@ -22,7 +21,7 @@ size_train = mnist.train.num_examples # should be 55k
 
 # Params
 batch_size = 100
-nb_epoch = 5
+nb_epoch = 50
 
 class VAE():
   def __init__(self):
@@ -113,7 +112,11 @@ class VAE():
 ###############################################################################
 
 class Train():
-  """ Convenience class for training and plotting """
+  """ This is just a convenience class for training and plotting
+  The goal is to declutter the model to understand the models more easily, and
+  to encourage modularity. In principle, you can use this Train class with a
+  variety of models.
+  """
   def __init__(self):
     # Declare our VAE model
     self.model = VAE()
@@ -128,17 +131,15 @@ class Train():
     self.epoch_time = datetime.now()
     self.cur_epoch_train = 0
     self.batch_callback = True
-    # TODO: WHY isn't outputing 30 fps, i.e. 1 epoch per second?
-    writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
     plot_n_frames_per_epoch = 30 # number of frames to visualize per epoch
+    self.frames_sent_to_plot = 0
+    frames = plot_n_frames_per_epoch * nb_epoch -1
 
-    # Calculate number of frames
+    # Check when you need to plot
     if self.batch_callback:
-      frames = nb_epoch*num_train_batches- 1
-      self.plot_every_nth_frame = num_train_batches // plot_n_frames_per_epoch
+      self.plot_nth_batch = num_train_batches // plot_n_frames_per_epoch
     else:
-      frames = nb_epoch - 1
-      self.plot_every_nth_frame = 1
+      self.plot_nth_batch = num_train_batches
 
     # Context manager for convenience
     # Uses default graph
@@ -151,13 +152,17 @@ class Train():
       print('*'*79)
 
       # Training and testing is managed by matplotlib iterator
+      Writer = animation.writers['ffmpeg']
+      writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
       animator = animation.FuncAnimation(
-              self.fig, self.update_plot, init_func=self.init_plot,
+              self.fig, self.update, init_func=self.init_plot,
               interval=5, frames=frames, blit=True, repeat=False)
+      # animator.save('animation.mp4', fps=30, writer=animation.FFMpegFileWriter())
       animator.save('animation.mp4', writer=writer)
       # try: animator.to_html5_video()
       # animator.save('animation.mpeg', writer=writer)
       # plt.show()
+    print('\nframes plotted: ', self.frames_sent_to_plot)
 
   def init_plot(self):
     """Create base frame
@@ -168,20 +173,17 @@ class Train():
     pred, labels = self.get_encoded_test()
     maxs = np.max(pred, axis=0)
     mins = np.min(pred, axis=0)
-    # self.ax.set_xlim(mins[0], maxs[0])
-    # self.ax.set_xlim(mins[1], maxs[1])
-    # self.ax.set_zlim(mins[2], maxs[2])
     self.scat = plt.scatter(pred[:,0], pred[:,1], c=labels)
     plt.colorbar()
     return [self.scat]
 
-  def update_plot(self, i):
+  def update(self, i):
     """ Update the plot after one epoch iteration """
-    self.increment_training()
-    if i % self.plot_every_nth_frame == 0:
-      pred, labels = self.get_encoded_test()
-      self.scat.set_offsets(pred)
-      self.scat.set_array(labels)
+    for i in range(self.plot_nth_batch): self.increment_training();
+    pred, labels = self.get_encoded_test()
+    self.scat.set_offsets(pred)
+    self.scat.set_array(labels)
+    self.frames_sent_to_plot += 1
     return [self.scat]
 
   def get_encoded_test(self):
@@ -216,8 +218,8 @@ class Train():
     self.last_batch_loss = loss
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
-    print('epoch: {:2.0f} time: {:2.1f} | loss: {:.4f}'.format(
-        self.cur_epoch_train, diff_t, loss), end='\r')
+    print('epoch: {:2.0f} time: {:3.1f} | loss: {:3.4f} | frames plotted: {:>4}'.format(
+        self.cur_epoch_train+1, diff_t, loss, self.frames_sent_to_plot), end='\r')
 
   def train_one_epoch(self):
     """ Trains model for a single epoch """
@@ -226,14 +228,14 @@ class Train():
     self.process_end_epoch()
 
   def process_end_epoch(self):
-    """ Print some info at the end of an epoch """
+    """ Print some info at the end of an epoch and update epoch counter"""
     self.cur_epoch_train = mnist.train.epochs_completed
     # At end of epoch, print new line
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
     epochs_completed = mnist.train.epochs_completed
-    print('epoch: {:2.0f} time: {:2.1f} | loss: {:.4f}'.format(
-      self.cur_epoch_train, diff_t, self.last_batch_loss), end="\n")
+    print('epoch: {:2.0f} time: {:3.1f} | loss: {:.4f} | frames plotted: {:>4}'.format(
+      self.cur_epoch_train, diff_t, self.last_batch_loss, self.frames_sent_to_plot), end="\n")
     self.epoch_time = datetime.now()
 
 train = Train()
