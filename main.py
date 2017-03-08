@@ -2,17 +2,17 @@
 # https://arxiv.org/abs/1312.6114
 
 # My tensorflow implementation of VAE, using MNIST
-# Some ideas like the plotting is from Francois Chollet blog:
+# I was inspired by the keras blog by Francois Chollet:
 # https://blog.keras.io/building-autoencoders-in-keras.html
 
 import tensorflow as tf
 import numpy as np
 from datetime import datetime
-from tensorflow.contrib.layers import xavier_initializer as glorot
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from mpl_toolkits.mplot3d import Axes3D
 from scipy.stats import norm
+from helpers import discrete_cmap
+from mlp_vae import VAE
 
 # Get data
 from tensorflow.examples.tutorials.mnist import input_data
@@ -21,91 +21,7 @@ size_train = mnist.train.num_examples # should be 55k
 
 # Params
 batch_size = 100
-nb_epoch = 50
-
-class VAE():
-  def __init__(self):
-    self.input_dim = 784
-    self.h_dim = 256 # hidden layer dimension
-    self.latent_dim = 2 # size of latent state hidden layer
-    self.data_type = tf.float32
-
-    # The MNIST inputs
-    self.x = tf.placeholder(self.data_type, shape=[None, self.input_dim])
-    self.batch_size = tf.shape(self.x)[0]
-
-    # The VAE
-    self.z_mean, z_log_sigma = self.encoder(self.x)
-    z = self.sampler(self.z_mean, z_log_sigma)
-    self.decoded = self.decoder(z)
-
-    # Loss and optimizer
-    self.recon_loss = self._recon_loss(self.x, self.decoded)
-    self.kl_loss = self._kl_loss(self.z_mean, z_log_sigma)
-
-    self.loss = tf.reduce_mean(self.recon_loss + self.kl_loss)
-    self.optimizer = tf.train.AdamOptimizer(0.001).minimize(self.loss)
-
-  def fc(self, x, in_dim, out_dim, scope, act=None):
-    """ Fully connected layer builder"""
-    with tf.variable_scope(scope):
-      weights = tf.get_variable("weights", shape=[in_dim, out_dim],
-                dtype=self.data_type, initializer=glorot())
-      biases = tf.get_variable("biases", out_dim,
-                dtype=self.data_type, initializer=tf.constant_initializer(0.0))
-      # Pre activation
-      h = tf.matmul(x,weights) + biases
-      # Post activation
-      if act:
-        h = act(h)
-      return h
-
-  def encoder(self, x):
-    """ The Encoder encodes the input into the necessary statistics of a latent
-    variable model, i.e. a Gaussian in this case. So encode to mean and sigma
-    """
-    # Input to dense
-    h_e = self.fc(x, self.input_dim, self.h_dim, act=tf.nn.relu, scope="x_to_h1")
-    # Dense to latent mean
-    z_m = self.fc(h_e, self.h_dim, self.latent_dim, act=None, scope="lat_mean")
-    # Dense to latent sigma
-    z_s = self.fc(h_e, self.h_dim, self.latent_dim, act=None, scope="lat_sigma")
-    return z_m, z_s
-
-  def sampler(self, z_mean, z_log_sigma):
-    """ We sample a datapoint from a Gaussian with the reparameterization trick
-    The encoder gives us a Gaussian mean and stdev. We add random noise and this
-    gives us a sample from the Gaussian density
-    """
-    epsilon = tf.random_normal(\
-        [self.batch_size, self.latent_dim], 0,1,dtype=self.data_type)
-    z = z_mean + tf.exp(z_log_sigma)*epsilon
-    return z
-
-  def decoder(self, z):
-    """ The decoder maps the sampled datapoint to the output,
-    which is the original input)
-    """
-    # Latent to hidden
-    h_d = self.fc(z, self.latent_dim, self.h_dim, act=tf.nn.relu, scope="z_to_h_d")
-    # Hidden to out
-    decoded = self.fc(h_d, self.h_dim, self.input_dim, act=None, scope="h_d_to_out")
-    return decoded
-
-  def _recon_loss(self, x, decoded):
-    """Loss between reconstructued input and true input"""
-    # recon_loss is shape [batch_size,]
-    recon_loss = tf.reduce_sum(\
-            tf.nn.sigmoid_cross_entropy_with_logits(\
-            labels=x, logits=decoded, name="recon_loss"), axis=1) # sum rows
-    return recon_loss
-
-  def _kl_loss(self, z_mean, z_log_sigma):
-    """ KL divergence loss"""
-    # kl_loss is shape [batch_size]
-    kl_loss = 0.5 * tf.reduce_sum(tf.square(z_mean) + \
-            tf.square(z_log_sigma) - tf.log(tf.square(z_log_sigma)) - 1,1)
-    return kl_loss
+nb_epoch = 5
 
 ###############################################################################
 # Main stuff
@@ -113,9 +29,7 @@ class VAE():
 
 class Train():
   """ This is just a convenience class for training and plotting
-  The goal is to declutter the model to understand the models more easily, and
-  to encourage modularity. In principle, you can use this Train class with a
-  variety of models.
+  Keep model separate so easier to understand just the nn part
   """
   def __init__(self):
     # Declare our VAE model
@@ -131,7 +45,7 @@ class Train():
     self.epoch_time = datetime.now()
     self.cur_epoch_train = 0
     self.batch_callback = True
-    plot_n_frames_per_epoch = 30 # number of frames to visualize per epoch
+    plot_n_frames_per_epoch = 60 # number of frames to visualize per epoch
     self.frames_sent_to_plot = 0
     frames = plot_n_frames_per_epoch * nb_epoch -1
 
@@ -157,11 +71,11 @@ class Train():
       animator = animation.FuncAnimation(
               self.fig, self.update, init_func=self.init_plot,
               interval=5, frames=frames, blit=True, repeat=False)
-      # animator.save('animation.mp4', fps=30, writer=animation.FFMpegFileWriter())
-      animator.save('animation.mp4', writer=writer)
+      # animator.save('animation2.mp4', writer=writer)
       # try: animator.to_html5_video()
       # animator.save('animation.mpeg', writer=writer)
-      # plt.show()
+
+      plt.show()
     print('\nframes plotted: ', self.frames_sent_to_plot)
 
   def init_plot(self):
@@ -171,10 +85,13 @@ class Train():
     """
     self.increment_training()
     pred, labels = self.get_encoded_test()
+    N = len(set(labels.flatten()))
     maxs = np.max(pred, axis=0)
     mins = np.min(pred, axis=0)
-    self.scat = plt.scatter(pred[:,0], pred[:,1], c=labels)
-    plt.colorbar()
+    self.scat = plt.scatter(pred[:,0], pred[:,1], c=labels,
+                cmap=discrete_cmap(plt, N, 'terrain'))
+    plt.colorbar(ticks=range(N))
+    plt.clim(-0.5, N - 0.5)
     return [self.scat]
 
   def update(self, i):
@@ -218,7 +135,7 @@ class Train():
     self.last_batch_loss = loss
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
-    print('epoch: {:2.0f} time: {:3.1f} | loss: {:3.4f} | frames plotted: {:>4}'.format(
+    print('epoch: {:2.0f} time: {:>4.1f} | loss: {:>3.4f} | frames plotted: {:>4}'.format(
         self.cur_epoch_train+1, diff_t, loss, self.frames_sent_to_plot), end='\r')
 
   def train_one_epoch(self):
@@ -234,8 +151,9 @@ class Train():
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
     epochs_completed = mnist.train.epochs_completed
-    print('epoch: {:2.0f} time: {:3.1f} | loss: {:.4f} | frames plotted: {:>4}'.format(
+    print('epoch: {:2.0f} time: {:>4.1f} | loss: {:.4f} | frames plotted: {:>4}'.format(
       self.cur_epoch_train, diff_t, self.last_batch_loss, self.frames_sent_to_plot), end="\n")
     self.epoch_time = datetime.now()
 
-train = Train()
+if __name__ == "__main__":
+  train = Train()
