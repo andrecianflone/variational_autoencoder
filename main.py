@@ -135,8 +135,8 @@ class Train():
     self.last_batch_loss = loss
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
-    print('epoch: {:2.0f} time: {:>4.1f} | loss: {:>3.4f} | frames plotted: {:>4}'.format(
-        self.cur_epoch_train+1, diff_t, loss, self.frames_sent_to_plot), end='\r')
+    self.print_train_progress(self.cur_epoch_train+1, diff_t,
+          loss, self.frames_sent_to_plot, line_end='\r')
 
   def train_one_epoch(self):
     """ Trains model for a single epoch """
@@ -151,9 +151,14 @@ class Train():
     t2 = datetime.now()
     diff_t = (t2 - self.epoch_time).total_seconds()
     epochs_completed = mnist.train.epochs_completed
-    print('epoch: {:2.0f} time: {:>4.1f} | loss: {:.4f} | frames plotted: {:>4}'.format(
-      self.cur_epoch_train, diff_t, self.last_batch_loss, self.frames_sent_to_plot), end="\n")
+    self.print_train_progress(self.cur_epoch_train,
+        diff_t, self.last_batch_loss, self.frames_sent_to_plot, line_end="\n")
     self.epoch_time = datetime.now()
+
+  def print_train_progress(self, epoch, diff_t, loss, frames, line_end="\r"):
+    """ Nice formatting for trainign info """
+    print('epoch: {:2.0f} time: {:>4.1f} | loss: {:>3.4f} | frames plotted: {:>4}'.format(
+        epoch, diff_t, loss, frames, end=line_end)
 
 if __name__ == "__main__":
   train = Train()
