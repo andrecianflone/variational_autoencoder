@@ -158,7 +158,7 @@ class Train():
   def print_train_progress(self, epoch, diff_t, loss, frames, line_end="\r"):
     """ Nice formatting for trainign info """
     print('epoch: {:2.0f} time: {:>4.1f} | loss: {:>3.4f} | frames plotted: {:>4}'.format(
-        epoch, diff_t, loss, frames, end=line_end)
+        epoch, diff_t, loss, frames),end=line_end)
 
 if __name__ == "__main__":
   train = Train()

@@ -1,11 +1,11 @@
 import tensorflow as tf
 import numpy as np
 from helpers import dense
+# See paper: https://arxiv.org/abs/1312.6114
 
 class VAE():
   def __init__(self):
     # Some hyperparams.
-    # TODO: params should probably be in main file
     self.input_dim = 784
     self.h_dim = 256 # hidden layer dimension
     self.latent_dim = 2 # size of latent state hidden layer
@@ -70,6 +70,8 @@ class VAE():
   def _kl_loss(self, z_mean, z_log_sigma):
     """ KL divergence loss"""
     # kl_loss is shape [batch_size]
+    # TODO: Sure about this below? Seems different than paper. See Eq 10:
+    # https://arxiv.org/abs/1312.6114
     kl_loss = 0.5 * tf.reduce_sum(tf.square(z_mean) + \
             tf.square(z_log_sigma) - tf.log(tf.square(z_log_sigma)) - 1,1)
     return kl_loss
